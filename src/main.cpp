@@ -10,12 +10,12 @@
 #include "stb_image_write.h"
 
 // Constants
-inline constexpr u16 SIGNATURE_OFFSET = 0x000;
+inline constexpr u16 SIGNATURE_OFFSET = 0x0;
 inline constexpr u16 SIGNATURE_LENGTH = 4;
-inline constexpr u16 WIDTH_OFFSET     = 0x424;
-inline constexpr u16 HEIGHT_OFFSET    = 0x426;
-inline constexpr u16 PALETTE_OFFSET   = 0x430;
-inline constexpr u16 IMAGE_OFFSET     = 0x470;
+inline constexpr u16 WIDTH_OFFSET     = 0x4;
+inline constexpr u16 HEIGHT_OFFSET    = 0x6;
+inline constexpr u16 PALETTE_OFFSET   = 0x10;
+inline constexpr u16 IMAGE_OFFSET     = 0x50;
 
 inline constexpr u16 PALETTE_SIZE       = 64;
 inline constexpr u16 PIXEL_STRIDE       = 4;
@@ -84,18 +84,36 @@ bool to_png(const std::filesystem::path& path)
             continue;
         }
 
+        printf("Converting file: %s\n", file_path.string().c_str());
+
+        const u8 modeByte = fileBuffer.data[0x10];
+        u16 baseOffset    = 0;
+        if (modeByte == 0x10) {
+            baseOffset = 0x420;
+        } else if (modeByte == 0x20) {
+            baseOffset = 0x820;
+        } else {
+            printf("Unknown mode byte: 0x%02X\n", modeByte);
+            continue;
+        }
+
+        const u16 widthOffset   = baseOffset + WIDTH_OFFSET;
+        const u16 heightOffset  = baseOffset + HEIGHT_OFFSET;
+        const u16 paletteOffset = baseOffset + PALETTE_OFFSET;
+        const u16 imageOffset   = baseOffset + IMAGE_OFFSET;
+
         u8 palette[NUM_PALETTE_COLORS][PIXEL_STRIDE] = { { 0, 0, 0, 0 } };
         for (u64 i = 1; i < NUM_PALETTE_COLORS; ++i) {
-            const u64 offset = PALETTE_OFFSET + i * PIXEL_STRIDE;
+            const u64 offset = paletteOffset + i * PIXEL_STRIDE;
             palette[i][0]    = fileBuffer.data[offset + 0];
             palette[i][1]    = fileBuffer.data[offset + 1];
             palette[i][2]    = fileBuffer.data[offset + 2];
-            palette[i][3]    = 0XFF;
+            palette[i][3]    = 0xFF;
         }
 
-        const u16 width  = fileBuffer.data[WIDTH_OFFSET] | (fileBuffer.data[WIDTH_OFFSET + 1] << 8);
-        const u16 height = fileBuffer.data[HEIGHT_OFFSET] | (fileBuffer.data[HEIGHT_OFFSET + 1] << 8);
-        const u32 count  = width * height;
+        const u16 width  = fileBuffer.data[widthOffset] | (fileBuffer.data[widthOffset + 1] << 8);
+        const u16 height = fileBuffer.data[heightOffset] | (fileBuffer.data[heightOffset + 1] << 8);
+        const u64 count  = width * height;
 
         std::unique_ptr<u8[]> pixeldata = std::make_unique<u8[]>(PIXEL_STRIDE * count);
 
@@ -104,7 +122,7 @@ bool to_png(const std::filesystem::path& path)
                 const u64 i1 = y * width + x;
                 const u64 i2 = i1 + 1;
 
-                const u8 byte   = fileBuffer.data[IMAGE_OFFSET + (i1 >> 1)];
+                const u8 byte   = fileBuffer.data[imageOffset + (i1 >> 1)];
                 const u8 index1 = byte & 0x0F;
                 const u8 index2 = byte >> 4;
 
